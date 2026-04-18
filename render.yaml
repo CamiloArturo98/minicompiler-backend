@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: minicompiler-backend
+    env: docker
+    dockerfilePath: ./Dockerfile
+    plan: free
+    envVars:
+      - key: PORT
+        value: 8080
+      - key: CORS_ALLOWED_ORIGINS
+        sync: false   # lo configuras manualmente en Render dashboard
