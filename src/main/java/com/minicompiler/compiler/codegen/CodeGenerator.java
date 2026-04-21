@@ -12,21 +12,28 @@ public class CodeGenerator {
     private final Map<String, Integer> functionTable;
 
     public CodeGenerator() {
-        this.instructions = new ArrayList<>();
-        this.labelCounter = 0;
-        this.functionTable = new HashMap<>();
+        this.instructions    = new ArrayList<>();
+        this.labelCounter    = 0;
+        this.functionTable   = new HashMap<>();
     }
 
     public List<Instruction> generate(Node.Program program) {
+        // Primera pasada: registrar funciones
+        for (Node stmt : program.statements()) {
+            if (stmt instanceof Node.FunctionDecl fd) {
+                generateFunctionDecl(fd);
+            }
+        }
+        // Segunda pasada: código principal
         emit(new Instruction(OpCode.NOP, 0));
         for (Node stmt : program.statements()) {
-            generateNode(stmt);
+            if (!(stmt instanceof Node.FunctionDecl)) {
+                generateNode(stmt);
+            }
         }
         emit(new Instruction(OpCode.HALT, 0));
         return Collections.unmodifiableList(instructions);
     }
-
-    // ─── Node Dispatch ───────────────────────────────────────────────────────
 
     private void generateNode(Node node) {
         switch (node) {
@@ -35,13 +42,13 @@ public class CodeGenerator {
             case Node.Assign a          -> generateAssign(a);
             case Node.BinaryOp b        -> generateBinaryOp(b);
             case Node.UnaryOp u         -> generateUnaryOp(u);
-            case Node.Literal l         -> generateLiteral(l);
+            case Node.Literal l         -> emit(new Instruction(OpCode.PUSH, l.value(), l.line()));
             case Node.Identifier id     -> emit(new Instruction(OpCode.LOAD, id.name(), id.line()));
             case Node.IfStmt is         -> generateIf(is);
             case Node.WhileStmt ws      -> generateWhile(ws);
             case Node.ForStmt fs        -> generateFor(fs);
             case Node.Block b           -> b.statements().forEach(this::generateNode);
-            case Node.FunctionDecl fd   -> generateFunctionDecl(fd);
+            case Node.FunctionDecl fd   -> {} // ya procesadas en primera pasada
             case Node.FunctionCall fc   -> generateFunctionCall(fc);
             case Node.ReturnStmt rs     -> generateReturn(rs);
             case Node.PrintStmt ps      -> generatePrint(ps);
@@ -80,21 +87,21 @@ public class CodeGenerator {
         generateNode(b.left());
         generateNode(b.right());
         OpCode op = switch (b.operator()) {
-            case "+"  -> OpCode.ADD;
-            case "-"  -> OpCode.SUB;
-            case "*"  -> OpCode.MUL;
-            case "/"  -> OpCode.DIV;
-            case "%"  -> OpCode.MOD;
-            case "**" -> OpCode.POW;
-            case "==" -> OpCode.EQ;
-            case "!=" -> OpCode.NEQ;
-            case "<"  -> OpCode.LT;
-            case "<=" -> OpCode.LTE;
-            case ">"  -> OpCode.GT;
-            case ">=" -> OpCode.GTE;
+            case "+"        -> OpCode.ADD;
+            case "-"        -> OpCode.SUB;
+            case "*"        -> OpCode.MUL;
+            case "/"        -> OpCode.DIV;
+            case "%"        -> OpCode.MOD;
+            case "**"       -> OpCode.POW;
+            case "=="       -> OpCode.EQ;
+            case "!="       -> OpCode.NEQ;
+            case "<"        -> OpCode.LT;
+            case "<="       -> OpCode.LTE;
+            case ">"        -> OpCode.GT;
+            case ">="       -> OpCode.GTE;
             case "&&", "and" -> OpCode.AND;
             case "||", "or"  -> OpCode.OR;
-            default -> throw new CompilerException("Unknown binary operator: " + b.operator(), "CODEGEN", b.line(), 0);
+            default -> throw new CompilerException("Unknown operator: " + b.operator(), "CODEGEN", b.line(), 0);
         };
         emit(new Instruction(op, b.line()));
     }
@@ -105,42 +112,46 @@ public class CodeGenerator {
             case "!" -> { generateNode(u.operand()); emit(new Instruction(OpCode.NOT, u.line())); }
             case "++pre" -> {
                 if (u.operand() instanceof Node.Identifier id) {
-                    emit(new Instruction(OpCode.LOAD, id.name(), u.line()));
-                    emit(new Instruction(OpCode.PUSH, 1, u.line()));
-                    emit(new Instruction(OpCode.ADD, u.line()));
-                    emit(new Instruction(OpCode.DUP, u.line()));
+                    emit(new Instruction(OpCode.LOAD,  id.name(), u.line()));
+                    emit(new Instruction(OpCode.PUSH,  1, u.line()));
+                    emit(new Instruction(OpCode.ADD,   u.line()));
+                    emit(new Instruction(OpCode.DUP,   u.line()));
                     emit(new Instruction(OpCode.STORE, id.name(), u.line()));
                 }
             }
             case "--pre" -> {
                 if (u.operand() instanceof Node.Identifier id) {
-                    emit(new Instruction(OpCode.LOAD, id.name(), u.line()));
-                    emit(new Instruction(OpCode.PUSH, 1, u.line()));
-                    emit(new Instruction(OpCode.SUB, u.line()));
-                    emit(new Instruction(OpCode.DUP, u.line()));
+                    emit(new Instruction(OpCode.LOAD,  id.name(), u.line()));
+                    emit(new Instruction(OpCode.PUSH,  1, u.line()));
+                    emit(new Instruction(OpCode.SUB,   u.line()));
+                    emit(new Instruction(OpCode.DUP,   u.line()));
                     emit(new Instruction(OpCode.STORE, id.name(), u.line()));
                 }
             }
             case "++post" -> {
                 if (u.operand() instanceof Node.Identifier id) {
-                    emit(new Instruction(OpCode.LOAD, id.name(), u.line()));
-                    emit(new Instruction(OpCode.DUP, u.line()));
-                    emit(new Instruction(OpCode.PUSH, 1, u.line()));
-                    emit(new Instruction(OpCode.ADD, u.line()));
+                    emit(new Instruction(OpCode.LOAD,  id.name(), u.line()));
+                    emit(new Instruction(OpCode.DUP,   u.line()));
+                    emit(new Instruction(OpCode.PUSH,  1, u.line()));
+                    emit(new Instruction(OpCode.ADD,   u.line()));
+                    emit(new Instruction(OpCode.STORE, id.name(), u.line()));
+                }
+            }
+            case "--post" -> {
+                if (u.operand() instanceof Node.Identifier id) {
+                    emit(new Instruction(OpCode.LOAD,  id.name(), u.line()));
+                    emit(new Instruction(OpCode.DUP,   u.line()));
+                    emit(new Instruction(OpCode.PUSH,  1, u.line()));
+                    emit(new Instruction(OpCode.SUB,   u.line()));
                     emit(new Instruction(OpCode.STORE, id.name(), u.line()));
                 }
             }
         }
     }
 
-    private void generateLiteral(Node.Literal l) {
-        emit(new Instruction(OpCode.PUSH, l.value(), l.line()));
-    }
-
     private void generateIf(Node.IfStmt is) {
         String elseLabel = newLabel("else");
         String endLabel  = newLabel("endif");
-
         generateNode(is.condition());
         emit(new Instruction(OpCode.JUMP_IF_FALSE, elseLabel, is.line()));
         generateNode(is.thenBranch());
@@ -153,7 +164,6 @@ public class CodeGenerator {
     private void generateWhile(Node.WhileStmt ws) {
         String startLabel = newLabel("while_start");
         String endLabel   = newLabel("while_end");
-
         emit(new Instruction(OpCode.LABEL, startLabel, ws.line()));
         generateNode(ws.condition());
         emit(new Instruction(OpCode.JUMP_IF_FALSE, endLabel, ws.line()));
@@ -165,7 +175,6 @@ public class CodeGenerator {
     private void generateFor(Node.ForStmt fs) {
         String startLabel = newLabel("for_start");
         String endLabel   = newLabel("for_end");
-
         if (fs.init() != null)      generateNode(fs.init());
         emit(new Instruction(OpCode.LABEL, startLabel, fs.line()));
         if (fs.condition() != null) {
@@ -179,24 +188,36 @@ public class CodeGenerator {
     }
 
     private void generateFunctionDecl(Node.FunctionDecl fd) {
-        String endLabel = newLabel("func_end_" + fd.name());
-        functionTable.put(fd.name(), instructions.size() + 2);
+        String funcLabel  = "func_" + fd.name();
+        String endLabel   = "func_end_" + fd.name();
 
+        // Saltar el cuerpo de la función durante ejecución normal
         emit(new Instruction(OpCode.JUMP, endLabel, fd.line()));
-        emit(new Instruction(OpCode.DEFINE_FUNC, fd.name(), fd.line()));
-        // Store parameters in reverse order
+
+        // Registrar la dirección de la función (instrucción después del JUMP)
+        functionTable.put(fd.name(), instructions.size());
+
+        emit(new Instruction(OpCode.LABEL, funcLabel, fd.line()));
+
+        // Sacar parámetros del stack en orden correcto y guardarlos
         List<String> params = new ArrayList<>(fd.params());
         Collections.reverse(params);
         for (String param : params) {
             emit(new Instruction(OpCode.STORE, param, fd.line()));
         }
+
+        // Cuerpo de la función
         generateNode(fd.body());
+
+        // Return por defecto si no hay return explícito
         emit(new Instruction(OpCode.PUSH, null, fd.line()));
         emit(new Instruction(OpCode.RETURN, fd.line()));
+
         emit(new Instruction(OpCode.LABEL, endLabel, fd.line()));
     }
 
     private void generateFunctionCall(Node.FunctionCall fc) {
+        // Empujar argumentos al stack en orden
         for (Node arg : fc.arguments()) {
             generateNode(arg);
         }
@@ -216,8 +237,6 @@ public class CodeGenerator {
         generateNode(ps.expression());
         emit(new Instruction(OpCode.PRINT, ps.line()));
     }
-
-    // ─── Utilities ───────────────────────────────────────────────────────────
 
     private void emit(Instruction instr) {
         instructions.add(instr);
