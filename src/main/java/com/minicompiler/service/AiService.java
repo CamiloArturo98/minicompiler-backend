@@ -97,35 +97,52 @@ public class AiService {
         };
     }
 
-    @SuppressWarnings("unchecked")
-    private String callGemini(String prompt) {
-        try {
-            HttpHeaders headers = new HttpHeaders();
-            headers.setContentType(MediaType.APPLICATION_JSON);
+   @SuppressWarnings("unchecked")
+private String callGemini(String prompt) {
+    try {
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
 
-            Map<String, Object> part = Map.of("text", prompt);
-            Map<String, Object> content = Map.of("parts", List.of(part));
-            Map<String, Object> body = Map.of("contents", List.of(content));
+        Map<String, Object> part = Map.of("text", prompt);
+        Map<String, Object> content = Map.of("parts", List.of(part));
+        Map<String, Object> body = Map.of("contents", List.of(content));
 
-            HttpEntity<Map<String, Object>> entity = new HttpEntity<>(body, headers);
+        HttpEntity<Map<String, Object>> entity = new HttpEntity<>(body, headers);
 
-            ResponseEntity<Map> response = restTemplate.postForEntity(
-                    GEMINI_URL + apiKey, entity, Map.class);
+        ResponseEntity<Map> response = restTemplate.exchange(
+                GEMINI_URL + apiKey,
+                HttpMethod.POST,
+                entity,
+                Map.class
+        );
 
-            if (response.getBody() != null) {
-                List<Map<String, Object>> candidates =
-                        (List<Map<String, Object>>) response.getBody().get("candidates");
-                if (candidates != null && !candidates.isEmpty()) {
-                    Map<String, Object> candidate = candidates.get(0);
-                    Map<String, Object> cont = (Map<String, Object>) candidate.get("content");
-                    List<Map<String, Object>> parts = (List<Map<String, Object>>) cont.get("parts");
-                    return (String) parts.get(0).get("text");
-                }
+        Map<String, Object> responseBody = response.getBody();
+
+        if (responseBody != null && responseBody.containsKey("candidates")) {
+            List<Map<String, Object>> candidates =
+                    (List<Map<String, Object>>) responseBody.get("candidates");
+
+            if (!candidates.isEmpty()) {
+                Map<String, Object> candidate = candidates.get(0);
+                Map<String, Object> cont = (Map<String, Object>) candidate.get("content");
+                List<Map<String, Object>> parts =
+                        (List<Map<String, Object>>) cont.get("parts");
+
+                return (String) parts.get(0).get("text");
             }
-            return "No se pudo obtener respuesta de la IA.";
-        } catch (Exception e) {
-            log.error("Gemini API error", e);
-            return "Error al conectar con la IA: " + e.getMessage();
         }
+
+        // 👇 IMPORTANTE: ver error real de Gemini
+        return "Respuesta inválida de Gemini: " + responseBody;
+
+    } catch (org.springframework.web.client.HttpClientErrorException e) {
+        // 👇 AQUÍ está el error real
+        log.error("Gemini API error BODY: {}", e.getResponseBodyAsString());
+        return "Gemini error: " + e.getResponseBodyAsString();
+
+    } catch (Exception e) {
+        log.error("Gemini API error", e);
+        return "Error interno: " + e.getMessage();
     }
 }
+    }
