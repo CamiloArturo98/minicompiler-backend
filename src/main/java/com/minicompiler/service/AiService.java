@@ -114,7 +114,7 @@ public class AiService {
             );
 
             Map<String, Object> body = Map.of(
-                    "model", "mistralai/mistral-7b-instruct",
+                    "model", "qwen/qwen-3.5-plus",
                     "messages", List.of(message)
             );
 
