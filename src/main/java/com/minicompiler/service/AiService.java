@@ -14,18 +14,18 @@ import java.util.*;
 @Service
 public class AiService {
 
-    @Value("${app.gemini.api-key}")
+    @Value("${app.ai.api-key}")
     private String apiKey;
 
-    private static final String GEMINI_URL =
-            "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=";
+    private static final String OPENROUTER_URL =
+            "https://openrouter.ai/api/v1/chat/completions";
 
     private final RestTemplate restTemplate = new RestTemplate();
 
     public AiResponse process(AiRequest request) {
         long start = System.currentTimeMillis();
         String prompt = buildPrompt(request);
-        String response = callGemini(prompt);
+        String response = callAI(prompt);
         return AiResponse.builder()
                 .content(response)
                 .action(request.action().name())
@@ -97,52 +97,60 @@ public class AiService {
         };
     }
 
-   @SuppressWarnings("unchecked")
-private String callGemini(String prompt) {
-    try {
-        HttpHeaders headers = new HttpHeaders();
-        headers.setContentType(MediaType.APPLICATION_JSON);
+    @SuppressWarnings("unchecked")
+    private String callAI(String prompt) {
+        try {
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(MediaType.APPLICATION_JSON);
+            headers.setBearerAuth(apiKey);
 
-        Map<String, Object> part = Map.of("text", prompt);
-        Map<String, Object> content = Map.of("parts", List.of(part));
-        Map<String, Object> body = Map.of("contents", List.of(content));
+            // Requeridos por OpenRouter
+            headers.add("HTTP-Referer", "https://tu-app.onrender.com");
+            headers.add("X-Title", "minicompiler");
 
-        HttpEntity<Map<String, Object>> entity = new HttpEntity<>(body, headers);
+            Map<String, Object> message = Map.of(
+                    "role", "user",
+                    "content", prompt
+            );
 
-        ResponseEntity<Map> response = restTemplate.exchange(
-                GEMINI_URL + apiKey,
-                HttpMethod.POST,
-                entity,
-                Map.class
-        );
+            Map<String, Object> body = Map.of(
+                    "model", "mistralai/mistral-7b-instruct",
+                    "messages", List.of(message)
+            );
 
-        Map<String, Object> responseBody = response.getBody();
+            HttpEntity<Map<String, Object>> entity = new HttpEntity<>(body, headers);
 
-        if (responseBody != null && responseBody.containsKey("candidates")) {
-            List<Map<String, Object>> candidates =
-                    (List<Map<String, Object>>) responseBody.get("candidates");
+            ResponseEntity<Map> response = restTemplate.exchange(
+                    OPENROUTER_URL,
+                    HttpMethod.POST,
+                    entity,
+                    Map.class
+            );
 
-            if (!candidates.isEmpty()) {
-                Map<String, Object> candidate = candidates.get(0);
-                Map<String, Object> cont = (Map<String, Object>) candidate.get("content");
-                List<Map<String, Object>> parts =
-                        (List<Map<String, Object>>) cont.get("parts");
+            Map<String, Object> responseBody = response.getBody();
 
-                return (String) parts.get(0).get("text");
+            if (responseBody != null && responseBody.containsKey("choices")) {
+                List<Map<String, Object>> choices =
+                        (List<Map<String, Object>>) responseBody.get("choices");
+
+                if (!choices.isEmpty()) {
+                    Map<String, Object> choice = choices.get(0);
+                    Map<String, Object> messageResp =
+                            (Map<String, Object>) choice.get("message");
+
+                    return (String) messageResp.get("content");
+                }
             }
+
+            return "Respuesta inválida de la IA: " + responseBody;
+
+        } catch (org.springframework.web.client.HttpClientErrorException e) {
+            log.error("OpenRouter API error BODY: {}", e.getResponseBodyAsString());
+            return "Error IA: " + e.getResponseBodyAsString();
+
+        } catch (Exception e) {
+            log.error("OpenRouter API error", e);
+            return "Error interno: " + e.getMessage();
         }
-
-        // 👇 IMPORTANTE: ver error real de Gemini
-        return "Respuesta inválida de Gemini: " + responseBody;
-
-    } catch (org.springframework.web.client.HttpClientErrorException e) {
-        // 👇 AQUÍ está el error real
-        log.error("Gemini API error BODY: {}", e.getResponseBodyAsString());
-        return "Gemini error: " + e.getResponseBodyAsString();
-
-    } catch (Exception e) {
-        log.error("Gemini API error", e);
-        return "Error interno: " + e.getMessage();
     }
 }
-    }
