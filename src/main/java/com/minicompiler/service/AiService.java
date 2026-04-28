@@ -25,7 +25,9 @@ public class AiService {
     public AiResponse process(AiRequest request) {
         long start = System.currentTimeMillis();
         String prompt = buildPrompt(request);
+        log.debug("Calling OpenRouter with action={}, promptLength={}", request.action(), prompt.length());
         String response = callAI(prompt);
+        log.debug("OpenRouter response length={}", response.length());
         return AiResponse.builder()
                 .content(response)
                 .action(request.action().name())
@@ -34,10 +36,14 @@ public class AiService {
     }
 
     private String buildPrompt(AiRequest req) {
+        String code  = req.sourceCode()   != null ? req.sourceCode()   : "(sin código)";
+        String error = req.errorMessage() != null ? req.errorMessage() : "(sin error)";
+        String prompt = req.userPrompt()  != null ? req.userPrompt()   : "";
+
         return switch (req.action()) {
             case EXPLAIN_ERROR -> """
                 Eres un experto en compiladores y lenguajes de programación.
-                El siguiente código fue ejecutado en un minicompilador de stack-based VM:Produjo este error: "%s"
+                El siguiente código fue ejecutado en un minicompilador de stack-based VM:%sProdujo este error:"%s"
 
                 Explica en español de forma clara y amigable:
                 1. Qué significa este error exactamente
@@ -45,18 +51,18 @@ public class AiService {
                 3. Cómo se puede entender mejor para no cometerlo de nuevo
 
                 Sé conciso pero completo. Usa emojis para hacer la explicación más amigable.
-                """.formatted(req.sourceCode(), req.errorMessage());
+                """.formatted(code, error);
 
             case SUGGEST_FIX -> """
-                Eres un experto en compiladores. Analiza este código de MiniScript:Error encontrado: "%s"
+                Eres un experto en compiladores. Analiza este código de MiniScript:%sError encontrado:"%s"
 
                 Proporciona en español:
                 1. El código CORREGIDO y completo listo para copiar
                 2. Una explicación breve de qué cambió y por qué
                 3. Sugerencias adicionales para mejorar el código
 
-                Formato tu respuesta con secciones claras usando markdown.
-                """.formatted(req.sourceCode(), req.errorMessage());
+                Formatea tu respuesta con secciones claras usando markdown.
+                """.formatted(code, error);
 
             case GENERATE_CODE -> """
                 Eres un experto en el lenguaje MiniScript, que tiene esta sintaxis:
@@ -64,28 +70,26 @@ public class AiService {
                 - Tipos: int, float, string, bool
                 - Funciones: function nombre(param1, param2) { ... return valor; }
                 - Control: if (cond) { } else { }, while (cond) { }, for (var i = 0; i < n; i++) { }
-                - Operadores: +, -, *, /, %, ** (potencia), ++, --
-                - Lógicos: and, or, not (también &&, ||, !)
+                - Operadores: +, -, *, /, %%, ** (potencia), ++, --
+                - Lógicos: and, or, not
                 - Comparación: ==, !=, <, <=, >, >=
                 - Compound: +=, -=, *=, /=
-                - print(expresión); — para imprimir
-                - Comentarios: // línea, /* bloque */
+                - print(expresión); para imprimir
+                - Comentarios: // línea
                 - Strings se concatenan con +
                 - Recursión soportada
 
                 Genera código MiniScript para: %s
 
                 Proporciona:
-                1. El código completo y funcional listo para ejecutar
+                1. El código completo y funcional listo para ejecutar (entre triple backticks)
                 2. Una explicación breve de cómo funciona
-                3. Ejemplo de qué output producirá
-
-                El código debe estar entre triple backticks.
-                """.formatted(req.userPrompt());
+                3. El output esperado al ejecutarlo
+                """.formatted(prompt.isBlank() ? "un algoritmo interesante que demuestre las capacidades del lenguaje" : prompt);
 
             case ANALYZE_CODE -> """
                 Eres un experto en compiladores y optimización de código.
-                Analiza este código MiniScript profundamente:Proporciona en español un análisis completo que incluya:
+                Analiza este código MiniScript profundamente:%sProporciona en español un análisis completo:
                 1. 📊 **Complejidad**: Análisis de complejidad temporal y espacial
                 2. 🐛 **Bugs potenciales**: Problemas que podrían ocurrir
                 3. ⚡ **Optimizaciones**: Mejoras concretas de rendimiento
@@ -93,7 +97,7 @@ public class AiService {
                 5. 💡 **Versión mejorada**: El código reescrito con todas las mejoras
 
                 Sé detallado y técnico pero claro.
-                """.formatted(req.sourceCode());
+                """.formatted(code);
         };
     }
 
@@ -103,22 +107,23 @@ public class AiService {
             HttpHeaders headers = new HttpHeaders();
             headers.setContentType(MediaType.APPLICATION_JSON);
             headers.setBearerAuth(apiKey);
-
-            // Requeridos por OpenRouter
-            headers.add("HTTP-Referer", "https://tu-app.onrender.com");
-            headers.add("X-Title", "minicompiler");
+            headers.add("HTTP-Referer", "https://minicompiler-backend.onrender.com");
+            headers.add("X-Title", "MiniCompiler Studio");
 
             Map<String, Object> message = Map.of(
                     "role", "user",
                     "content", prompt
             );
 
-            Map<String, Object> body = Map.of(
-                    "model", "qwen/qwen-3.5-plus",
-                    "messages", List.of(message)
-            );
+            Map<String, Object> body = new HashMap<>();
+            body.put("model", "mistralai/mistral-7b-instruct:free");
+            body.put("messages", List.of(message));
+            body.put("max_tokens", 2048);
+            body.put("temperature", 0.7);
 
             HttpEntity<Map<String, Object>> entity = new HttpEntity<>(body, headers);
+
+            log.debug("Sending request to OpenRouter...");
 
             ResponseEntity<Map> response = restTemplate.exchange(
                     OPENROUTER_URL,
@@ -127,30 +132,36 @@ public class AiService {
                     Map.class
             );
 
+            log.debug("OpenRouter status: {}", response.getStatusCode());
+
             Map<String, Object> responseBody = response.getBody();
 
             if (responseBody != null && responseBody.containsKey("choices")) {
                 List<Map<String, Object>> choices =
                         (List<Map<String, Object>>) responseBody.get("choices");
-
                 if (!choices.isEmpty()) {
                     Map<String, Object> choice = choices.get(0);
-                    Map<String, Object> messageResp =
-                            (Map<String, Object>) choice.get("message");
-
-                    return (String) messageResp.get("content");
+                    Map<String, Object> msg = (Map<String, Object>) choice.get("message");
+                    String content = (String) msg.get("content");
+                    log.debug("Got content from OpenRouter, length={}", content != null ? content.length() : 0);
+                    return content != null ? content : "La IA no devolvió contenido.";
                 }
             }
 
-            return "Respuesta inválida de la IA: " + responseBody;
+            log.warn("Unexpected OpenRouter response: {}", responseBody);
+            return "Respuesta inesperada de la IA.";
 
         } catch (org.springframework.web.client.HttpClientErrorException e) {
-            log.error("OpenRouter API error BODY: {}", e.getResponseBodyAsString());
-            return "Error IA: " + e.getResponseBodyAsString();
+            log.error("OpenRouter HTTP error {}: {}", e.getStatusCode(), e.getResponseBodyAsString());
+            return "❌ Error de la IA (" + e.getStatusCode() + "): " + e.getResponseBodyAsString();
+
+        } catch (org.springframework.web.client.HttpServerErrorException e) {
+            log.error("OpenRouter server error {}: {}", e.getStatusCode(), e.getResponseBodyAsString());
+            return "❌ Error del servidor de IA: " + e.getResponseBodyAsString();
 
         } catch (Exception e) {
-            log.error("OpenRouter API error", e);
-            return "Error interno: " + e.getMessage();
+            log.error("OpenRouter unexpected error: {}", e.getMessage(), e);
+            return "❌ Error interno: " + e.getMessage();
         }
     }
 }
