@@ -116,7 +116,7 @@ public class AiService {
             );
 
             Map<String, Object> body = new HashMap<>();
-            body.put("model", "mistralai/mistral-7b-instruct:free");
+            body.put("model","anthropic/claude-haiku-4.5");
             body.put("messages", List.of(message));
             body.put("max_tokens", 2048);
             body.put("temperature", 0.7);
