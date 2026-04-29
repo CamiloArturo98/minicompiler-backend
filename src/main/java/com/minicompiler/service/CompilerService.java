@@ -23,6 +23,7 @@ import java.util.List;
 @RequiredArgsConstructor
 public class CompilerService {
 
+    private final RecordService recordService;
     private final ObjectMapper objectMapper;
 
     public CompileResponse compile(CompileRequest request) {
