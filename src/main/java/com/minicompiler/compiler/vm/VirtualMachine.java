@@ -6,20 +6,60 @@ import com.minicompiler.exception.CompilerException;
 
 import java.util.*;
 
+/**
+ * Stack-based virtual machine that executes a flat {@link Instruction} list
+ * produced by the code generator.
+ *
+ * <p><b>Template Method</b> — {@link #execute} follows a fixed pipeline:
+ * label indexing → dispatch loop → result construction. Each stage is
+ * delegated to a focused private method.
+ *
+ * <p><b>Factory Method</b> — {@link #buildSuccess} and {@link #buildError}
+ * are the single construction points for {@link ExecutionResult}, eliminating
+ * four duplicated {@code builder()…build()} blocks.
+ */
 public class VirtualMachine {
 
-    private static final int MAX_INSTRUCTIONS = 100_000;
-    private static final int MAX_STACK_DEPTH  = 1_000;
+    // =========================================================================
+    // Constants
+    // =========================================================================
 
-    private final Deque<Object>              stack;
-    private final Deque<Frame>               callStack;
-    private       Map<String, Object>        memory;
-    private final List<String>               output;
-    private final Map<String, Integer>       labelMap;
-    private final Map<String, Integer>       functionTable;
+    private static final int    MAX_INSTRUCTIONS      = 100_000;
+    private static final int    MAX_STACK_DEPTH        = 1_000;
+    private static final String VM_PHASE              = "VM";
+    private static final String ERR_DIVISION_ZERO     = "Division by zero";
+    private static final String ERR_MODULO_ZERO       = "Modulo by zero";
+    private static final String ERR_STACK_OVERFLOW    = "Stack overflow";
+    private static final String ERR_STACK_UNDERFLOW   = "Stack underflow";
+    private static final String ERR_EXEC_LIMIT        = "Execution limit exceeded (possible infinite loop)";
+    private static final String ERR_UNDEFINED_VAR     = "Undefined variable: ";
+    private static final String ERR_UNDEFINED_FUNC    = "Undefined function: ";
+    private static final String ERR_UNDEFINED_LABEL   = "Undefined label: ";
+    private static final String ERR_UNKNOWN_OPCODE    = "Unknown opcode: ";
+    private static final String ERR_CANNOT_NEGATE     = "Cannot negate: ";
+    private static final String ERR_CANNOT_CONVERT    = "Cannot convert to number: ";
+    private static final String ERROR_FORMAT          = "[%s] L%d: %s";
+
+    // =========================================================================
+    // Fields
+    // =========================================================================
+
+    private final Deque<Object>        stack;
+    private final Deque<Frame>         callStack;
+    private final List<String>         output;
+    private final Map<String, Integer> labelMap;
+    private final Map<String, Integer> functionTable;
+    private       Map<String, Object>  memory;
 
     private record Frame(Map<String, Object> memory, int returnAddress) {}
 
+    // =========================================================================
+    // Constructor
+    // =========================================================================
+
+    /**
+     * @param functionTable function-name → entry-point index map built by the code generator
+     */
     public VirtualMachine(Map<String, Integer> functionTable) {
         this.stack         = new ArrayDeque<>();
         this.callStack     = new ArrayDeque<>();
@@ -29,151 +69,149 @@ public class VirtualMachine {
         this.functionTable = functionTable;
     }
 
+    // =========================================================================
+    // Public API
+    // =========================================================================
+
+    /**
+     * Executes the given instruction list and returns a result regardless of
+     * whether execution succeeds or fails.
+     *
+     * @param  instructions the optimized instruction list to run
+     * @return an {@link ExecutionResult} capturing output, memory, timing, and any error
+     */
     public ExecutionResult execute(List<Instruction> instructions) {
         long start = System.currentTimeMillis();
+        buildLabelMap(instructions);
 
-        // First pass: build label map
-        for (int i = 0; i < instructions.size(); i++) {
-            if (instructions.get(i).opCode() == OpCode.LABEL) {
-                labelMap.put(String.valueOf(instructions.get(i).operand()), i);
-            }
-        }
-
-        int ip = 0;
+        int ip       = 0;
         int executed = 0;
 
         try {
             while (ip < instructions.size()) {
                 if (executed++ > MAX_INSTRUCTIONS) {
-                    return ExecutionResult.builder()
-                            .success(false)
-                            .output(output)
-                            .error("Execution limit exceeded (possible infinite loop)")
-                            .instructionsExecuted(executed)
-                            .executionTimeMs(System.currentTimeMillis() - start)
-                            .build();
+                    return buildError(ERR_EXEC_LIMIT, executed, start);
                 }
 
-                Instruction instr = instructions.get(ip);
+                var instr = instructions.get(ip);
                 ip++;
 
                 switch (instr.opCode()) {
                     case NOP, LABEL -> {}
 
-                    case HALT -> {
-                        return ExecutionResult.builder()
-                                .success(true)
-                                .output(output)
-                                .finalMemory(new HashMap<>(memory))
-                                .instructionsExecuted(executed)
-                                .executionTimeMs(System.currentTimeMillis() - start)
-                                .build();
-                    }
+                    case HALT -> { return buildSuccess(executed, start); }
 
                     case PUSH -> push(instr.operand());
                     case POP  -> pop();
                     case DUP  -> push(peek());
-                    case SWAP -> { Object a = pop(); Object b = pop(); push(a); push(b); }
+                    case SWAP -> { var a = pop(); var b = pop(); push(a); push(b); }
 
-                    case ADD -> { Object b = pop(); Object a = pop(); push(addValues(a, b)); }
-                    case SUB -> { Object b = pop(); Object a = pop(); push(numericOp(a, b, "-")); }
-                    case MUL -> { Object b = pop(); Object a = pop(); push(numericOp(a, b, "*")); }
+                    case ADD -> { var b = pop(); var a = pop(); push(addValues(a, b)); }
+                    case SUB -> { var b = pop(); var a = pop(); push(numericOp(a, b, "-")); }
+                    case MUL -> { var b = pop(); var a = pop(); push(numericOp(a, b, "*")); }
                     case DIV -> {
-                        Object b = pop(); Object a = pop();
-                        if (toDouble(b) == 0) throw new CompilerException("Division by zero", "VM", instr.line(), 0);
+                        var b = pop(); var a = pop();
+                        if (toDouble(b) == 0) throw new CompilerException(ERR_DIVISION_ZERO, VM_PHASE, instr.line(), 0);
                         push(numericOp(a, b, "/"));
                     }
                     case MOD -> {
-                        Object b = pop(); Object a = pop();
-                        if (toDouble(b) == 0) throw new CompilerException("Modulo by zero", "VM", instr.line(), 0);
+                        var b = pop(); var a = pop();
+                        if (toDouble(b) == 0) throw new CompilerException(ERR_MODULO_ZERO, VM_PHASE, instr.line(), 0);
                         push((int)(toLong(a) % toLong(b)));
                     }
-                    case POW -> { Object b = pop(); Object a = pop(); push(Math.pow(toDouble(a), toDouble(b))); }
+                    case POW -> { var b = pop(); var a = pop(); push(Math.pow(toDouble(a), toDouble(b))); }
                     case NEG -> push(negateValue(pop()));
 
-                    case EQ  -> { Object b = pop(); Object a = pop(); push(equalsValues(a, b)); }
-                    case NEQ -> { Object b = pop(); Object a = pop(); push(!equalsValues(a, b)); }
-                    case LT  -> { Object b = pop(); Object a = pop(); push(toDouble(a) < toDouble(b)); }
-                    case LTE -> { Object b = pop(); Object a = pop(); push(toDouble(a) <= toDouble(b)); }
-                    case GT  -> { Object b = pop(); Object a = pop(); push(toDouble(a) > toDouble(b)); }
-                    case GTE -> { Object b = pop(); Object a = pop(); push(toDouble(a) >= toDouble(b)); }
+                    case EQ  -> { var b = pop(); var a = pop(); push(equalsValues(a, b)); }
+                    case NEQ -> { var b = pop(); var a = pop(); push(!equalsValues(a, b)); }
+                    case LT  -> { var b = pop(); var a = pop(); push(toDouble(a) < toDouble(b)); }
+                    case LTE -> { var b = pop(); var a = pop(); push(toDouble(a) <= toDouble(b)); }
+                    case GT  -> { var b = pop(); var a = pop(); push(toDouble(a) > toDouble(b)); }
+                    case GTE -> { var b = pop(); var a = pop(); push(toDouble(a) >= toDouble(b)); }
 
-                    case AND -> { Object b = pop(); Object a = pop(); push(toBool(a) && toBool(b)); }
-                    case OR  -> { Object b = pop(); Object a = pop(); push(toBool(a) || toBool(b)); }
+                    case AND -> { var b = pop(); var a = pop(); push(toBool(a) && toBool(b)); }
+                    case OR  -> { var b = pop(); var a = pop(); push(toBool(a) || toBool(b)); }
                     case NOT -> push(!toBool(pop()));
 
                     case LOAD -> {
-                        String name = (String) instr.operand();
-                        // Busca primero en memoria local, luego en global
-                        if (memory.containsKey(name)) {
-                            push(memory.get(name));
-                        } else {
-                            throw new CompilerException("Undefined variable: " + name, "VM", instr.line(), 0);
+                        var name = (String) instr.operand();
+                        if (!memory.containsKey(name)) {
+                            throw new CompilerException(ERR_UNDEFINED_VAR + name, VM_PHASE, instr.line(), 0);
                         }
+                        push(memory.get(name));
                     }
 
-                    case STORE -> {
-                        memory.put((String) instr.operand(), pop());
-                    }
-
+                    case STORE     -> memory.put((String) instr.operand(), pop());
                     case LOAD_CONST -> push(instr.operand());
 
-                    case JUMP -> ip = resolveLabel((String) instr.operand(), instr.line());
-
-                    case JUMP_IF_FALSE -> {
-                        if (!toBool(pop())) ip = resolveLabel((String) instr.operand(), instr.line());
-                    }
-
-                    case JUMP_IF_TRUE -> {
-                        if (toBool(pop())) ip = resolveLabel((String) instr.operand(), instr.line());
-                    }
+                    case JUMP           -> ip = resolveLabel((String) instr.operand(), instr.line());
+                    case JUMP_IF_FALSE  -> { if (!toBool(pop())) ip = resolveLabel((String) instr.operand(), instr.line()); }
+                    case JUMP_IF_TRUE   -> { if (toBool(pop()))  ip = resolveLabel((String) instr.operand(), instr.line()); }
 
                     case DEFINE_FUNC -> {}
 
                     case CALL -> {
-                        String funcName = (String) instr.operand();
-                        Integer funcAddr = functionTable.get(funcName);
+                        var funcName = (String) instr.operand();
+                        var funcAddr = functionTable.get(funcName);
                         if (funcAddr == null) {
-                            throw new CompilerException("Undefined function: " + funcName, "VM", instr.line(), 0);
+                            throw new CompilerException(ERR_UNDEFINED_FUNC + funcName, VM_PHASE, instr.line(), 0);
                         }
-                        // Guarda frame actual con copia del memory y dirección de retorno
                         callStack.push(new Frame(new HashMap<>(memory), ip));
-                        // Nueva memoria local que hereda variables globales
                         memory = new HashMap<>(memory);
-                        ip = funcAddr;
+                        ip     = funcAddr;
                     }
 
                     case RETURN -> {
-                        Object returnValue = pop();
-                        // Restaura frame anterior
-                        Frame frame = callStack.pop();
+                        var returnValue = pop();
+                        var frame       = callStack.pop();
                         memory = frame.memory();
-                        ip = frame.returnAddress();
+                        ip     = frame.returnAddress();
                         push(returnValue);
                     }
 
                     case PRINT -> output.add(formatValue(pop()));
-
                     case INPUT -> memory.put((String) instr.operand(), "<<input>>");
 
-                    default -> throw new CompilerException("Unknown opcode: " + instr.opCode(), "VM", instr.line(), 0);
+                    default -> throw new CompilerException(ERR_UNKNOWN_OPCODE + instr.opCode(), VM_PHASE, instr.line(), 0);
                 }
 
                 if (stack.size() > MAX_STACK_DEPTH) {
-                    throw new CompilerException("Stack overflow", "VM", instr.line(), 0);
+                    throw new CompilerException(ERR_STACK_OVERFLOW, VM_PHASE, instr.line(), 0);
                 }
             }
 
         } catch (CompilerException e) {
-            return ExecutionResult.builder()
-                    .success(false)
-                    .output(output)
-                    .error("[" + e.getPhase() + "] L" + e.getLine() + ": " + e.getMessage())
-                    .instructionsExecuted(executed)
-                    .executionTimeMs(System.currentTimeMillis() - start)
-                    .build();
+            return buildError(ERROR_FORMAT.formatted(e.getPhase(), e.getLine(), e.getMessage()), executed, start);
         }
 
+        return buildSuccess(executed, start);
+    }
+
+    // =========================================================================
+    // Template Method steps
+    // =========================================================================
+
+    /**
+     * Pass 1 — indexes every {@link OpCode#LABEL} instruction by its operand string
+     * so that jump instructions can resolve targets in O(1).
+     */
+    private void buildLabelMap(List<Instruction> instructions) {
+        for (int i = 0; i < instructions.size(); i++) {
+            var instr = instructions.get(i);
+            if (instr.opCode() == OpCode.LABEL) {
+                labelMap.put(String.valueOf(instr.operand()), i);
+            }
+        }
+    }
+
+    // =========================================================================
+    // Factory Method — ExecutionResult construction
+    // =========================================================================
+
+    /**
+     * Builds a successful {@link ExecutionResult} with the current output and memory snapshot.
+     */
+    private ExecutionResult buildSuccess(int executed, long start) {
         return ExecutionResult.builder()
                 .success(true)
                 .output(output)
@@ -183,25 +221,46 @@ public class VirtualMachine {
                 .build();
     }
 
-    // ─── Helpers ─────────────────────────────────────────────────────────────
+    /**
+     * Builds a failed {@link ExecutionResult} with the given error message.
+     */
+    private ExecutionResult buildError(String error, int executed, long start) {
+        return ExecutionResult.builder()
+                .success(false)
+                .output(output)
+                .error(error)
+                .instructionsExecuted(executed)
+                .executionTimeMs(System.currentTimeMillis() - start)
+                .build();
+    }
 
-    private void push(Object value) { stack.push(value); }
+    // =========================================================================
+    // Stack helpers
+    // =========================================================================
+
+    private void push(Object value) {
+        stack.push(value);
+    }
 
     private Object pop() {
-        if (stack.isEmpty()) throw new CompilerException("Stack underflow", "VM", 0, 0);
+        if (stack.isEmpty()) throw new CompilerException(ERR_STACK_UNDERFLOW, VM_PHASE, 0, 0);
         return stack.pop();
     }
 
     private Object peek() {
-        if (stack.isEmpty()) throw new CompilerException("Stack underflow (peek)", "VM", 0, 0);
+        if (stack.isEmpty()) throw new CompilerException(ERR_STACK_UNDERFLOW + " (peek)", VM_PHASE, 0, 0);
         return stack.peek();
     }
 
     private int resolveLabel(String label, int line) {
-        Integer addr = labelMap.get(label);
-        if (addr == null) throw new CompilerException("Undefined label: " + label, "VM", line, 0);
+        var addr = labelMap.get(label);
+        if (addr == null) throw new CompilerException(ERR_UNDEFINED_LABEL + label, VM_PHASE, line, 0);
         return addr + 1;
     }
+
+    // =========================================================================
+    // Value helpers
+    // =========================================================================
 
     private Object addValues(Object a, Object b) {
         if (a instanceof String || b instanceof String) return formatValue(a) + formatValue(b);
@@ -209,9 +268,10 @@ public class VirtualMachine {
     }
 
     private Object numericOp(Object a, Object b, String op) {
-        boolean isInt = (a instanceof Integer) && (b instanceof Integer);
-        double da = toDouble(a), db = toDouble(b);
-        double result = switch (op) {
+        boolean isInt  = (a instanceof Integer) && (b instanceof Integer);
+        double  da     = toDouble(a);
+        double  db     = toDouble(b);
+        double  result = switch (op) {
             case "+" -> da + db;
             case "-" -> da - db;
             case "*" -> da * db;
@@ -223,35 +283,38 @@ public class VirtualMachine {
 
     private Object negateValue(Object a) {
         if (a instanceof Integer i) return -i;
-        if (a instanceof Double d)  return -d;
-        throw new CompilerException("Cannot negate: " + a, "VM", 0, 0);
+        if (a instanceof Double  d) return -d;
+        throw new CompilerException(ERR_CANNOT_NEGATE + a, VM_PHASE, 0, 0);
     }
 
     private boolean equalsValues(Object a, Object b) {
         if (a == null && b == null) return true;
         if (a == null || b == null) return false;
-        if (a instanceof Number na && b instanceof Number nb)
+        if (a instanceof Number na && b instanceof Number nb) {
             return Double.compare(na.doubleValue(), nb.doubleValue()) == 0;
+        }
         return a.equals(b);
     }
 
     private double toDouble(Object v) {
         if (v instanceof Integer i) return i.doubleValue();
-        if (v instanceof Double d)  return d;
-        if (v instanceof Float f)   return f.doubleValue();
-        if (v instanceof Long l)    return l.doubleValue();
+        if (v instanceof Double  d) return d;
+        if (v instanceof Float   f) return f.doubleValue();
+        if (v instanceof Long    l) return l.doubleValue();
         if (v instanceof Boolean b) return b ? 1.0 : 0.0;
-        throw new CompilerException("Cannot convert to number: " + v, "VM", 0, 0);
+        throw new CompilerException(ERR_CANNOT_CONVERT + v, VM_PHASE, 0, 0);
     }
 
-    private long toLong(Object v) { return (long) toDouble(v); }
+    private long toLong(Object v) {
+        return (long) toDouble(v);
+    }
 
     private boolean toBool(Object v) {
         if (v == null)              return false;
         if (v instanceof Boolean b) return b;
         if (v instanceof Integer i) return i != 0;
-        if (v instanceof Double d)  return d != 0.0;
-        if (v instanceof String s)  return !s.isEmpty();
+        if (v instanceof Double  d) return d != 0.0;
+        if (v instanceof String  s) return !s.isEmpty();
         return true;
     }
 

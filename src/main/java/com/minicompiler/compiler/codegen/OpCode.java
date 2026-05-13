@@ -1,4 +1,8 @@
 package com.minicompiler.compiler.codegen;
+/**
+ * Defines the complete instruction set for the mini-compiler virtual machine.
+ * Each constant represents a single bytecode operation executed by the interpreter.
+ */
 
 public enum OpCode {
     // Stack Operations

@@ -1,5 +1,10 @@
 package com.minicompiler.compiler.lexer;
 
+/**
+ * Defines every token category recognized by the {@link Lexer}.
+ * Used by the parser to drive grammatical analysis.
+ */
+
 public enum TokenType {
     // Literals
     INTEGER, FLOAT, STRING, BOOLEAN,

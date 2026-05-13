@@ -20,9 +20,11 @@ C:\Users\Arthu\Documents\minicompiler-backend\src\main\java\com\minicompiler\con
 C:\Users\Arthu\Documents\minicompiler-backend\src\main\java\com\minicompiler\controller\SnippetController.java
 C:\Users\Arthu\Documents\minicompiler-backend\src\main\java\com\minicompiler\controller\StatsController.java
 C:\Users\Arthu\Documents\minicompiler-backend\src\main\java\com\minicompiler\controller\TokenizerController.java
+C:\Users\Arthu\Documents\minicompiler-backend\src\main\java\com\minicompiler\domain\entity\AiChatHistory.java
 C:\Users\Arthu\Documents\minicompiler-backend\src\main\java\com\minicompiler\domain\entity\CompilationRecord.java
 C:\Users\Arthu\Documents\minicompiler-backend\src\main\java\com\minicompiler\domain\entity\CompilationSession.java
 C:\Users\Arthu\Documents\minicompiler-backend\src\main\java\com\minicompiler\domain\entity\SnippetLibrary.java
+C:\Users\Arthu\Documents\minicompiler-backend\src\main\java\com\minicompiler\domain\repository\AiChatHistoryRepository.java
 C:\Users\Arthu\Documents\minicompiler-backend\src\main\java\com\minicompiler\domain\repository\CompilationRecordRepository.java
 C:\Users\Arthu\Documents\minicompiler-backend\src\main\java\com\minicompiler\domain\repository\CompilationSessionRepository.java
 C:\Users\Arthu\Documents\minicompiler-backend\src\main\java\com\minicompiler\domain\repository\SnippetLibraryRepository.java
@@ -30,6 +32,7 @@ C:\Users\Arthu\Documents\minicompiler-backend\src\main\java\com\minicompiler\dto
 C:\Users\Arthu\Documents\minicompiler-backend\src\main\java\com\minicompiler\dto\request\CompileRequest.java
 C:\Users\Arthu\Documents\minicompiler-backend\src\main\java\com\minicompiler\dto\request\SessionRequest.java
 C:\Users\Arthu\Documents\minicompiler-backend\src\main\java\com\minicompiler\dto\request\SnippetRequest.java
+C:\Users\Arthu\Documents\minicompiler-backend\src\main\java\com\minicompiler\dto\response\AiHistoryResponse.java
 C:\Users\Arthu\Documents\minicompiler-backend\src\main\java\com\minicompiler\dto\response\AiResponse.java
 C:\Users\Arthu\Documents\minicompiler-backend\src\main\java\com\minicompiler\dto\response\CompileResponse.java
 C:\Users\Arthu\Documents\minicompiler-backend\src\main\java\com\minicompiler\dto\response\ErrorResponse.java
@@ -42,9 +45,13 @@ C:\Users\Arthu\Documents\minicompiler-backend\src\main\java\com\minicompiler\exc
 C:\Users\Arthu\Documents\minicompiler-backend\src\main\java\com\minicompiler\exception\GlobalExceptionHandler.java
 C:\Users\Arthu\Documents\minicompiler-backend\src\main\java\com\minicompiler\exception\ResourceNotFoundException.java
 C:\Users\Arthu\Documents\minicompiler-backend\src\main\java\com\minicompiler\MinicompilerApplication.java
+C:\Users\Arthu\Documents\minicompiler-backend\src\main\java\com\minicompiler\service\AiHistoryService.java
 C:\Users\Arthu\Documents\minicompiler-backend\src\main\java\com\minicompiler\service\AiService.java
 C:\Users\Arthu\Documents\minicompiler-backend\src\main\java\com\minicompiler\service\CompilerService.java
+C:\Users\Arthu\Documents\minicompiler-backend\src\main\java\com\minicompiler\service\ExampleService.java
+C:\Users\Arthu\Documents\minicompiler-backend\src\main\java\com\minicompiler\service\OptimizerService.java
 C:\Users\Arthu\Documents\minicompiler-backend\src\main\java\com\minicompiler\service\RecordService.java
 C:\Users\Arthu\Documents\minicompiler-backend\src\main\java\com\minicompiler\service\SessionService.java
 C:\Users\Arthu\Documents\minicompiler-backend\src\main\java\com\minicompiler\service\SnippetService.java
 C:\Users\Arthu\Documents\minicompiler-backend\src\main\java\com\minicompiler\service\StatsService.java
+C:\Users\Arthu\Documents\minicompiler-backend\src\main\java\com\minicompiler\service\TokenizerService.java

@@ -4,48 +4,105 @@ import com.minicompiler.exception.CompilerException;
 
 import java.util.*;
 
+/**
+ * Converts a raw source string into a flat list of {@link Token} objects.
+ *
+ * <p>Uses a <b>Strategy</b> pattern via two immutable lookup maps:
+ * {@link #KEYWORDS} for reserved words and {@link #SINGLE_CHAR_TOKENS} for
+ * unambiguous single-character symbols, keeping {@link #readSymbol()} focused
+ * only on operators that require lookahead.
+ */
 public class Lexer {
 
-    private final String source;
-    private int pos;
-    private int line;
-    private int column;
+    // =========================================================================
+    // Strategy — keyword map (immutable, replaces mutable static initializer)
+    // =========================================================================
+
+    private static final Map<String, TokenType> KEYWORDS = Map.ofEntries(
+            Map.entry("var",      TokenType.VAR),
+            Map.entry("const",    TokenType.CONST),
+            Map.entry("if",       TokenType.IF),
+            Map.entry("else",     TokenType.ELSE),
+            Map.entry("while",    TokenType.WHILE),
+            Map.entry("for",      TokenType.FOR),
+            Map.entry("do",       TokenType.DO),
+            Map.entry("function", TokenType.FUNCTION),
+            Map.entry("return",   TokenType.RETURN),
+            Map.entry("print",    TokenType.PRINT),
+            Map.entry("input",    TokenType.INPUT),
+            Map.entry("true",     TokenType.TRUE),
+            Map.entry("false",    TokenType.FALSE),
+            Map.entry("null",     TokenType.NULL),
+            Map.entry("and",      TokenType.AND),
+            Map.entry("or",       TokenType.OR),
+            Map.entry("not",      TokenType.NOT),
+            Map.entry("int",      TokenType.INT_TYPE),
+            Map.entry("float",    TokenType.FLOAT_TYPE),
+            Map.entry("string",   TokenType.STRING_TYPE),
+            Map.entry("bool",     TokenType.BOOL_TYPE)
+    );
+
+    // =========================================================================
+    // Strategy — single-character tokens that need no lookahead
+    // =========================================================================
+
+    private static final Map<Character, TokenType> SINGLE_CHAR_TOKENS = Map.of(
+            '(', TokenType.LPAREN,
+            ')', TokenType.RPAREN,
+            '{', TokenType.LBRACE,
+            '}', TokenType.RBRACE,
+            '[', TokenType.LBRACKET,
+            ']', TokenType.RBRACKET,
+            ';', TokenType.SEMICOLON,
+            ',', TokenType.COMMA,
+            '.', TokenType.DOT,
+            ':', TokenType.COLON
+    );
+
+    // =========================================================================
+    // Constants
+    // =========================================================================
+
+    private static final char NULL_CHAR     = '\0';
+    private static final char NEWLINE       = '\n';
+    private static final char EOF_SENTINEL  = '\0';
+
+    // =========================================================================
+    // Fields
+    // =========================================================================
+
+    private final String      source;
     private final List<Token> tokens;
+    private       int         pos;
+    private       int         line;
+    private       int         column;
 
-    private static final Map<String, TokenType> KEYWORDS = new HashMap<>();
+    // =========================================================================
+    // Constructor
+    // =========================================================================
 
-    static {
-        KEYWORDS.put("var",      TokenType.VAR);
-        KEYWORDS.put("const",    TokenType.CONST);
-        KEYWORDS.put("if",       TokenType.IF);
-        KEYWORDS.put("else",     TokenType.ELSE);
-        KEYWORDS.put("while",    TokenType.WHILE);
-        KEYWORDS.put("for",      TokenType.FOR);
-        KEYWORDS.put("do",       TokenType.DO);
-        KEYWORDS.put("function", TokenType.FUNCTION);
-        KEYWORDS.put("return",   TokenType.RETURN);
-        KEYWORDS.put("print",    TokenType.PRINT);
-        KEYWORDS.put("input",    TokenType.INPUT);
-        KEYWORDS.put("true",     TokenType.TRUE);
-        KEYWORDS.put("false",    TokenType.FALSE);
-        KEYWORDS.put("null",     TokenType.NULL);
-        KEYWORDS.put("and",      TokenType.AND);
-        KEYWORDS.put("or",       TokenType.OR);
-        KEYWORDS.put("not",      TokenType.NOT);
-        KEYWORDS.put("int",      TokenType.INT_TYPE);
-        KEYWORDS.put("float",    TokenType.FLOAT_TYPE);
-        KEYWORDS.put("string",   TokenType.STRING_TYPE);
-        KEYWORDS.put("bool",     TokenType.BOOL_TYPE);
-    }
-
+    /**
+     * @param source the raw source code string to tokenize
+     */
     public Lexer(String source) {
         this.source = source;
-        this.pos = 0;
-        this.line = 1;
-        this.column = 1;
         this.tokens = new ArrayList<>();
+        this.pos    = 0;
+        this.line   = 1;
+        this.column = 1;
     }
 
+    // =========================================================================
+    // Public API
+    // =========================================================================
+
+    /**
+     * Scans the entire source string and returns an unmodifiable token list
+     * terminated by an {@link TokenType#EOF} token.
+     *
+     * @return unmodifiable list of tokens
+     * @throws CompilerException on any lexical error
+     */
     public List<Token> tokenize() {
         while (pos < source.length()) {
             skipWhitespaceAndComments();
@@ -67,7 +124,9 @@ public class Lexer {
         return Collections.unmodifiableList(tokens);
     }
 
-    // ─── Helpers ────────────────────────────────────────────────────────────
+    // =========================================================================
+    // Helpers — Factory Method for token creation
+    // =========================================================================
 
     private char current() {
         return source.charAt(pos);
@@ -75,11 +134,11 @@ public class Lexer {
 
     private char peek(int offset) {
         int idx = pos + offset;
-        return idx < source.length() ? source.charAt(idx) : '\0';
+        return idx < source.length() ? source.charAt(idx) : EOF_SENTINEL;
     }
 
     private void advance() {
-        if (pos < source.length() && source.charAt(pos) == '\n') {
+        if (pos < source.length() && source.charAt(pos) == NEWLINE) {
             line++;
             column = 1;
         } else {
@@ -88,19 +147,22 @@ public class Lexer {
         pos++;
     }
 
+    /** Factory Method — single point of {@link Token} construction. */
     private void addToken(TokenType type, String value, int startCol) {
         tokens.add(new Token(type, value, line, startCol));
     }
 
-    // ─── Skip ────────────────────────────────────────────────────────────────
+    // =========================================================================
+    // Skip
+    // =========================================================================
 
     private void skipWhitespaceAndComments() {
         while (pos < source.length()) {
             char c = current();
-            if (c == ' ' || c == '\t' || c == '\r' || c == '\n') {
+            if (c == ' ' || c == '\t' || c == '\r' || c == NEWLINE) {
                 advance();
             } else if (c == '/' && peek(1) == '/') {
-                while (pos < source.length() && current() != '\n') advance();
+                while (pos < source.length() && current() != NEWLINE) advance();
             } else if (c == '/' && peek(1) == '*') {
                 skipBlockComment();
             } else {
@@ -122,11 +184,13 @@ public class Lexer {
         throw new CompilerException("Unterminated block comment", "LEXER", startLine, 0);
     }
 
-    // ─── Readers ─────────────────────────────────────────────────────────────
+    // =========================================================================
+    // Readers
+    // =========================================================================
 
     private void readNumber() {
         int startCol = column;
-        StringBuilder sb = new StringBuilder();
+        var sb = new StringBuilder();
         boolean isFloat = false;
 
         while (pos < source.length() && Character.isDigit(current())) {
@@ -140,7 +204,6 @@ public class Lexer {
                 sb.append(current()); advance();
             }
         }
-        // Scientific notation
         if (pos < source.length() && (current() == 'e' || current() == 'E')) {
             isFloat = true;
             sb.append(current()); advance();
@@ -156,7 +219,7 @@ public class Lexer {
 
     private void readIdentifierOrKeyword() {
         int startCol = column;
-        StringBuilder sb = new StringBuilder();
+        var sb = new StringBuilder();
         while (pos < source.length() && (Character.isLetterOrDigit(current()) || current() == '_')) {
             sb.append(current());
             advance();
@@ -173,7 +236,7 @@ public class Lexer {
     private void readString(char quote) {
         int startCol = column;
         advance(); // skip opening quote
-        StringBuilder sb = new StringBuilder();
+        var sb = new StringBuilder();
         while (pos < source.length() && current() != quote) {
             if (current() == '\\') {
                 advance();
@@ -184,7 +247,7 @@ public class Lexer {
                     case '\\' -> '\\';
                     case '"'  -> '"';
                     case '\'' -> '\'';
-                    default -> throw new CompilerException(
+                    default   -> throw new CompilerException(
                             "Unknown escape sequence: \\" + current(), "LEXER", line, column);
                 };
                 sb.append(escaped);
@@ -205,49 +268,58 @@ public class Lexer {
         int startCol = column;
         char c = current();
 
+        // Strategy — resolve unambiguous single-char tokens first
+        TokenType singleChar = SINGLE_CHAR_TOKENS.get(c);
+        if (singleChar != null) {
+            advance();
+            addToken(singleChar, String.valueOf(c), startCol);
+            return;
+        }
+
+        // Operators requiring lookahead
         switch (c) {
             case '+' -> {
                 advance();
-                if (pos < source.length() && current() == '+') { advance(); addToken(TokenType.INCREMENT, "++", startCol); }
-                else if (pos < source.length() && current() == '=') { advance(); addToken(TokenType.PLUS_ASSIGN, "+=", startCol); }
+                if (pos < source.length() && current() == '+') { advance(); addToken(TokenType.INCREMENT,      "++", startCol); }
+                else if (pos < source.length() && current() == '=') { advance(); addToken(TokenType.PLUS_ASSIGN,    "+=", startCol); }
                 else addToken(TokenType.PLUS, "+", startCol);
             }
             case '-' -> {
                 advance();
-                if (pos < source.length() && current() == '-') { advance(); addToken(TokenType.DECREMENT, "--", startCol); }
-                else if (pos < source.length() && current() == '=') { advance(); addToken(TokenType.MINUS_ASSIGN, "-=", startCol); }
+                if (pos < source.length() && current() == '-') { advance(); addToken(TokenType.DECREMENT,      "--", startCol); }
+                else if (pos < source.length() && current() == '=') { advance(); addToken(TokenType.MINUS_ASSIGN,   "-=", startCol); }
                 else addToken(TokenType.MINUS, "-", startCol);
             }
             case '*' -> {
                 advance();
-                if (pos < source.length() && current() == '*') { advance(); addToken(TokenType.POWER, "**", startCol); }
+                if (pos < source.length() && current() == '*') { advance(); addToken(TokenType.POWER,          "**", startCol); }
                 else if (pos < source.length() && current() == '=') { advance(); addToken(TokenType.MULTIPLY_ASSIGN, "*=", startCol); }
                 else addToken(TokenType.MULTIPLY, "*", startCol);
             }
             case '/' -> {
                 advance();
-                if (pos < source.length() && current() == '=') { advance(); addToken(TokenType.DIVIDE_ASSIGN, "/=", startCol); }
+                if (pos < source.length() && current() == '=') { advance(); addToken(TokenType.DIVIDE_ASSIGN,  "/=", startCol); }
                 else addToken(TokenType.DIVIDE, "/", startCol);
             }
             case '%' -> { advance(); addToken(TokenType.MODULO, "%", startCol); }
             case '=' -> {
                 advance();
-                if (pos < source.length() && current() == '=') { advance(); addToken(TokenType.EQUAL, "==", startCol); }
+                if (pos < source.length() && current() == '=') { advance(); addToken(TokenType.EQUAL,          "==", startCol); }
                 else addToken(TokenType.ASSIGN, "=", startCol);
             }
             case '!' -> {
                 advance();
-                if (pos < source.length() && current() == '=') { advance(); addToken(TokenType.NOT_EQUAL, "!=", startCol); }
+                if (pos < source.length() && current() == '=') { advance(); addToken(TokenType.NOT_EQUAL,      "!=", startCol); }
                 else addToken(TokenType.NOT, "!", startCol);
             }
             case '<' -> {
                 advance();
-                if (pos < source.length() && current() == '=') { advance(); addToken(TokenType.LESS_EQUAL, "<=", startCol); }
+                if (pos < source.length() && current() == '=') { advance(); addToken(TokenType.LESS_EQUAL,     "<=", startCol); }
                 else addToken(TokenType.LESS, "<", startCol);
             }
             case '>' -> {
                 advance();
-                if (pos < source.length() && current() == '=') { advance(); addToken(TokenType.GREATER_EQUAL, ">=", startCol); }
+                if (pos < source.length() && current() == '=') { advance(); addToken(TokenType.GREATER_EQUAL,  ">=", startCol); }
                 else addToken(TokenType.GREATER, ">", startCol);
             }
             case '&' -> {
@@ -260,17 +332,7 @@ public class Lexer {
                 if (pos < source.length() && current() == '|') { advance(); addToken(TokenType.OR, "||", startCol); }
                 else throw new CompilerException("Unexpected character '|'", "LEXER", line, startCol);
             }
-            case '(' -> { advance(); addToken(TokenType.LPAREN, "(", startCol); }
-            case ')' -> { advance(); addToken(TokenType.RPAREN, ")", startCol); }
-            case '{' -> { advance(); addToken(TokenType.LBRACE, "{", startCol); }
-            case '}' -> { advance(); addToken(TokenType.RBRACE, "}", startCol); }
-            case '[' -> { advance(); addToken(TokenType.LBRACKET, "[", startCol); }
-            case ']' -> { advance(); addToken(TokenType.RBRACKET, "]", startCol); }
-            case ';' -> { advance(); addToken(TokenType.SEMICOLON, ";", startCol); }
-            case ',' -> { advance(); addToken(TokenType.COMMA, ",", startCol); }
-            case '.' -> { advance(); addToken(TokenType.DOT, ".", startCol); }
-            case ':' -> { advance(); addToken(TokenType.COLON, ":", startCol); }
-            default  -> throw new CompilerException(
+            default -> throw new CompilerException(
                     "Unexpected character: '" + c + "'", "LEXER", line, startCol);
         }
     }

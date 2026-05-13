@@ -9,25 +9,36 @@ import com.minicompiler.dto.response.RecordResponse;
 import com.minicompiler.exception.ResourceNotFoundException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 
+/**
+ * Service managing persistence and retrieval of {@link CompilationRecord} entities.
+ */
 @Slf4j
 @Service
 @RequiredArgsConstructor
 @Transactional(readOnly = true)
 public class RecordService {
 
-    private final CompilationRecordRepository recordRepository;
+    private final CompilationRecordRepository  recordRepository;
     private final CompilationSessionRepository sessionRepository;
 
+    // =========================================================================
+    // Public API
+    // =========================================================================
+
+    /**
+     * Returns a paginated list of all records ordered by creation date descending.
+     *
+     * @param page zero-based page index
+     * @param size number of records per page
+     */
     public PageResponse<RecordResponse> findAll(int page, int size) {
-        Page<CompilationRecord> result = recordRepository
-                .findAllByOrderByCreatedAtDesc(PageRequest.of(page, size));
+        var result = recordRepository.findAllByOrderByCreatedAtDesc(PageRequest.of(page, size));
         return new PageResponse<>(
                 result.getContent().stream().map(this::toResponse).toList(),
                 result.getNumber(), result.getSize(),
@@ -35,35 +46,68 @@ public class RecordService {
         );
     }
 
+    /**
+     * Returns a single record by its ID.
+     *
+     * @param  id the record ID
+     * @throws ResourceNotFoundException if no record exists with the given ID
+     */
     public RecordResponse findById(Long id) {
         return recordRepository.findById(id)
                 .map(this::toResponse)
                 .orElseThrow(() -> new ResourceNotFoundException("Record", id));
     }
 
+    /**
+     * Returns all records belonging to the given session, most recent first.
+     *
+     * @param sessionId the parent session ID
+     */
     public List<RecordResponse> findBySession(Long sessionId) {
         return recordRepository.findBySessionIdOrderByCreatedAtDesc(sessionId)
                 .stream().map(this::toResponse).toList();
     }
 
+    /**
+     * Returns all records matching the given success flag, most recent first.
+     *
+     * @param success {@code true} for successful compilations, {@code false} for failed ones
+     */
     public List<RecordResponse> findBySuccess(boolean success) {
         return recordRepository.findBySuccessOrderByCreatedAtDesc(success)
                 .stream().map(this::toResponse).toList();
     }
 
+    /**
+     * Persists a new compilation record linked to the given session.
+     *
+     * @param  sessionId the ID of the parent session
+     * @param  record    the record entity to persist
+     * @throws ResourceNotFoundException if no session exists with the given ID
+     */
     @Transactional
     public RecordResponse save(Long sessionId, CompilationRecord record) {
-        CompilationSession session = sessionRepository.findById(sessionId)
+        var session = sessionRepository.findById(sessionId)
                 .orElseThrow(() -> new ResourceNotFoundException("Session", sessionId));
         record.setSession(session);
         return toResponse(recordRepository.save(record));
     }
 
+    /**
+     * Deletes a record by its ID.
+     *
+     * @param  id the record ID to delete
+     * @throws ResourceNotFoundException if no record exists with the given ID
+     */
     @Transactional
     public void delete(Long id) {
         if (!recordRepository.existsById(id)) throw new ResourceNotFoundException("Record", id);
         recordRepository.deleteById(id);
     }
+
+    // =========================================================================
+    // Mapper
+    // =========================================================================
 
     private RecordResponse toResponse(CompilationRecord r) {
         return new RecordResponse(
