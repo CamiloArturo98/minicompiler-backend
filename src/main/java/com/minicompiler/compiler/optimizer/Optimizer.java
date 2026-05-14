@@ -9,16 +9,16 @@ import java.util.stream.Collectors;
 /**
  * Applies a multi-pass optimization pipeline over a flat instruction list.
  *
- * <p><b>Template Method</b> — {@link #optimize} define the order of the tree
- * pass; each one is a private method independent and replaceable.
+ * <p><b>Template Method</b> — {@link #optimize} defines the fixed order of the three
+ * passes; each one is an independent and replaceable private method.
  *
- * <p><b>Strategy</b> — {@link #FOLDABLE_OPS} that replaced a switch of
- * {@code isArithmeticOrComparison} by a consult O(1) for a {@link Set} immutable.
+ * <p><b>Strategy</b> — {@link #FOLDABLE_OPS} replaces the switch of
+ * {@code isArithmeticOrComparison} with an O(1) lookup on an immutable {@link Set}.
  */
 public class Optimizer {
 
     // =========================================================================
-    // Strategy — opcodes eligible for a constant folding
+    // Strategy — opcodes eligible for constant folding
     // =========================================================================
 
     private static final Set<OpCode> FOLDABLE_OPS = Set.of(
@@ -87,6 +87,9 @@ public class Optimizer {
     /**
      * Pass 2 — removes instructions that follow an unconditional {@code JUMP}
      * or {@code HALT} and are not reachable via any label reference.
+     *
+     * <p>All {@link OpCode#LABEL} instructions are always preserved to maintain
+     * the integrity of the {@code functionTable} indices used by {@code CALL}.
      */
     private ArrayList<Instruction> deadCodeElimination(List<Instruction> instructions) {
         Set<String> usedLabels = collectUsedLabels(instructions);
@@ -97,9 +100,10 @@ public class Optimizer {
         for (var instr : instructions) {
             if (instr.opCode() == OpCode.LABEL) {
                 dead = false;
-                if (usedLabels.contains(String.valueOf(instr.operand()))) {
-                    result.add(instr);
-                }
+                // Always preserve LABEL instructions — function entry-point labels
+                // are referenced via functionTable (not jump targets) and must not
+                // be removed, as doing so shifts instruction indices and corrupts CALL.
+                result.add(instr);
                 continue;
             }
             if (dead) continue;
@@ -126,7 +130,7 @@ public class Optimizer {
 
     /**
      * Collects every label string that is the target of a jump instruction,
-     * used by {@link #deadCodeElimination} to decide which labels to keep.
+     * used by {@link #deadCodeElimination} to decide which code sections are live.
      */
     private Set<String> collectUsedLabels(List<Instruction> instructions) {
         var used = new HashSet<String>();
