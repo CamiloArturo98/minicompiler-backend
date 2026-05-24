@@ -23,6 +23,7 @@ com\minicompiler\controller\OptimizerController.class
 com\minicompiler\domain\repository\SnippetLibraryRepository.class
 com\minicompiler\service\RecordService.class
 com\minicompiler\domain\entity\SnippetLibrary.class
+com\minicompiler\domain\entity\User.class
 com\minicompiler\dto\request\AiRequest.class
 com\minicompiler\dto\response\AiResponse$AiResponseBuilder.class
 com\minicompiler\exception\ResourceNotFoundException.class
@@ -54,6 +55,7 @@ com\minicompiler\compiler\ast\Node$Block.class
 com\minicompiler\dto\response\StatsResponse.class
 com\minicompiler\compiler\parser\Parser$1.class
 com\minicompiler\config\AppConfig.class
+com\minicompiler\domain\entity\Role.class
 com\minicompiler\compiler\lexer\Lexer.class
 com\minicompiler\compiler\vm\VirtualMachine$1.class
 com\minicompiler\domain\entity\CompilationSession$CompilationSessionBuilder.class
@@ -82,6 +84,7 @@ com\minicompiler\domain\repository\AiChatHistoryRepository.class
 com\minicompiler\dto\response\CompileResponse.class
 com\minicompiler\dto\response\SessionResponse.class
 com\minicompiler\compiler\codegen\CodeGenerator.class
+com\minicompiler\domain\entity\User$UserBuilder.class
 com\minicompiler\compiler\optimizer\Optimizer$1.class
 com\minicompiler\service\CompilerService.class
 com\minicompiler\controller\ExamplesController.class

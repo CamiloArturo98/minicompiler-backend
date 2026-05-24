@@ -27,8 +27,10 @@ public class GlobalExceptionHandler {
     private static final String ERR_COMPILER   = "Compiler Error";
     private static final String ERR_VALIDATION = "Validation Error";
     private static final String ERR_NOT_FOUND  = "Not Found";
+    private static final String ERR_CONFLICT   = "Conflict";
     private static final String ERR_INTERNAL   = "Internal Server Error";
     private static final String MSG_VALIDATION = "Request validation failed";
+    private static final String PARSER_PHASE   = "PARSER";
 
     // =========================================================================
     // Handlers
@@ -73,6 +75,17 @@ public class GlobalExceptionHandler {
     }
 
     /**
+     * Handles {@link IllegalArgumentException} for business rule violations such as
+     * duplicate usernames or emails during registration.
+     * Returns {@code 409 Conflict}.
+     */
+    @ExceptionHandler(IllegalArgumentException.class)
+    public ResponseEntity<ErrorResponse> handleIllegalArgument(IllegalArgumentException ex) {
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(buildError(HttpStatus.CONFLICT, ERR_CONFLICT, ex.getMessage()).build());
+    }
+
+    /**
      * Catch-all handler for any unhandled exception.
      * Returns {@code 500 Internal Server Error}.
      */
@@ -88,8 +101,7 @@ public class GlobalExceptionHandler {
 
     /**
      * Builds a pre-populated {@link ErrorResponse} builder with timestamp, status,
-     * error label, and message. Callers may chain additional fields before calling
-     * {@code build()}.
+     * error label, and message.
      *
      * @param status  the HTTP status to reflect in the response body
      * @param error   short error category label
