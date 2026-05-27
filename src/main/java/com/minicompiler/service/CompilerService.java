@@ -10,6 +10,7 @@ import com.minicompiler.compiler.optimizer.Optimizer;
 import com.minicompiler.compiler.parser.Parser;
 import com.minicompiler.compiler.vm.ExecutionResult;
 import com.minicompiler.compiler.vm.VirtualMachine;
+import com.minicompiler.domain.entity.CompilationRecord;
 import com.minicompiler.dto.request.CompileRequest;
 import com.minicompiler.dto.response.CompileResponse;
 import lombok.RequiredArgsConstructor;
@@ -57,10 +58,14 @@ public class CompilerService {
         var bytecode = codeGen.generate(ast);
         var final_bc = request.optimize() ? optimize(bytecode) : bytecode;
         var result   = execute(codeGen, final_bc);
+        long elapsed = System.currentTimeMillis() - start;
 
-        return buildResponse(request, tokens, ast, codeGen, bytecode,
-                request.optimize() ? final_bc : null, result,
-                System.currentTimeMillis() - start);
+        var response = buildResponse(request, tokens, ast, codeGen, bytecode,
+                request.optimize() ? final_bc : null, result, elapsed);
+
+        persistLog(request, bytecode, result, elapsed);
+
+        return response;
     }
 
     // =========================================================================
@@ -143,6 +148,49 @@ public class CompilerService {
         } catch (Exception e) {
             log.warn("Could not serialize AST", e);
             return null;
+        }
+    }
+
+    // =========================================================================
+// Log persistence — fire-and-log, never fails the compilation pipeline
+// =========================================================================
+
+    /**
+     * Persists a {@link CompilationRecord} for every compilation attempt.
+     * Failures are logged as warnings and do not propagate to the caller.
+     *
+     * @param request   the original compile request
+     * @param bytecode  the raw (pre-optimization) instruction list
+     * @param result    the VM execution result
+     * @param elapsedMs total wall-clock time for this compilation
+     */
+    private void persistLog(CompileRequest    request,
+                            List<Instruction> bytecode,
+                            ExecutionResult   result,
+                            long              elapsedMs) {
+        try {
+            var output = result.getOutput() != null
+                    ? String.join("\n", result.getOutput())
+                    : null;
+            var bytecodeStr = String.join("\n",
+                    bytecode.stream().map(Instruction::toString).toList());
+
+            var record = CompilationRecord.builder()
+                    .sourceCode(request.sourceCode())
+                    .output(output)
+                    .bytecode(bytecodeStr)
+                    .success(result.isSuccess())
+                    .errorMessage(result.getError())
+                    .compilationTimeMs(elapsedMs)
+                    .instructionsExecuted(result.getInstructionsExecuted())
+                    .optimized(request.optimize())
+                    .build();
+
+            recordService.saveRecord(record);
+            log.debug("Compilation log persisted — success={}, ms={}", result.isSuccess(), elapsedMs);
+
+        } catch (Exception e) {
+            log.warn("Failed to persist compilation log: {}", e.getMessage());
         }
     }
 }

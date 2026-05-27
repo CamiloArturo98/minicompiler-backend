@@ -105,6 +105,18 @@ public class RecordService {
         recordRepository.deleteById(id);
     }
 
+    /**
+     * Persists a standalone compilation record not linked to any session.
+     * Used by the compiler pipeline to automatically log every compilation attempt.
+     *
+     * @param  record the populated record entity to persist
+     * @return the saved record as a response DTO
+     */
+    @Transactional
+    public RecordResponse saveRecord(CompilationRecord record) {
+        return toResponse(recordRepository.save(record));
+    }
+
     // =========================================================================
     // Mapper
     // =========================================================================

@@ -44,7 +44,8 @@ public class SecurityConfig {
             "/api/v1/optimizer/**",
             "/api/v1/tokenizer/**",
             "/api/v1/examples/**",
-            "/api/v1/ai/**"       // ← AI es público; auth se maneja a nivel de usuario en el front
+            "/api/v1/ai/**",      // ← AI es público; auth se maneja a nivel de usuario en el front
+            "/api/v1/logs/**"
     };
 
     // =========================================================================
