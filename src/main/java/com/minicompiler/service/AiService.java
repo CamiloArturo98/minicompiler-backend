@@ -28,31 +28,42 @@ import java.util.*;
 public class AiService {
 
     // =========================================================================
-    // Constants
+    // Constants — UI / message strings (not environment-dependent)
     // =========================================================================
-
-    private static final String OPENROUTER_URL    = "https://openrouter.ai/api/v1/chat/completions";
-    private static final String AI_MODEL          = "anthropic/claude-haiku-4.5";
-    private static final String HTTP_REFERER      = "https://minicompiler-backend.onrender.com";
-    private static final String X_TITLE           = "MiniCompiler Studio";
-    private static final int    MAX_TOKENS        = 2_048;
-    private static final double TEMPERATURE       = 0.7;
 
     private static final String PLACEHOLDER_NO_CODE  = "(sin código)";
     private static final String PLACEHOLDER_NO_ERROR = "(sin error)";
 
-    private static final String MSG_NO_CONTENT   = "La IA no devolvió contenido.";
-    private static final String MSG_UNEXPECTED   = "Respuesta inesperada de la IA.";
-    private static final String ERR_CLIENT       = "❌ Error de la IA (%s): %s";
-    private static final String ERR_SERVER       = "❌ Error del servidor de IA: %s";
-    private static final String ERR_INTERNAL     = "❌ Error interno: %s";
+    private static final String MSG_NO_CONTENT = "La IA no devolvió contenido.";
+    private static final String MSG_UNEXPECTED = "Respuesta inesperada de la IA.";
+    private static final String ERR_CLIENT     = "❌ Error de la IA (%s): %s";
+    private static final String ERR_SERVER     = "❌ Error del servidor de IA: %s";
+    private static final String ERR_INTERNAL   = "❌ Error interno: %s";
 
     // =========================================================================
-    // Fields
+    // Fields — all values externalized to application.properties
     // =========================================================================
 
     @Value("${app.ai.api-key}")
     private String apiKey;
+
+    @Value("${app.ai.url}")
+    private String openrouterUrl;
+
+    @Value("${app.ai.model}")
+    private String aiModel;
+
+    @Value("${app.ai.http-referer}")
+    private String httpReferer;
+
+    @Value("${app.ai.title}")
+    private String xTitle;
+
+    @Value("${app.ai.max-tokens}")
+    private int maxTokens;
+
+    @Value("${app.ai.temperature}")
+    private double temperature;
 
     private final RestTemplate restTemplate = new RestTemplate();
 
@@ -68,10 +79,10 @@ public class AiService {
      * @return the AI-generated response with timing metadata
      */
     public AiResponse process(AiRequest request) {
-        long   start  = System.currentTimeMillis();
-        var    prompt = buildPrompt(request);
+        long start  = System.currentTimeMillis();
+        var  prompt = buildPrompt(request);
         log.debug("Calling OpenRouter with action={}, promptLength={}", request.action(), prompt.length());
-        var    content = callAI(prompt);
+        var content = callAI(prompt);
         log.debug("OpenRouter response length={}", content.length());
         return AiResponse.builder()
                 .content(content)
@@ -160,7 +171,7 @@ public class AiService {
     private String callAI(String prompt) {
         try {
             var entity   = new HttpEntity<>(buildRequestBody(prompt), buildHeaders());
-            var response = restTemplate.exchange(OPENROUTER_URL, HttpMethod.POST, entity, Map.class);
+            var response = restTemplate.exchange(openrouterUrl, HttpMethod.POST, entity, Map.class);
             log.debug("OpenRouter status: {}", response.getStatusCode());
             return extractContent((Map<String, Object>) response.getBody());
 
@@ -187,18 +198,18 @@ public class AiService {
         var headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
         headers.setBearerAuth(apiKey);
-        headers.add("HTTP-Referer", HTTP_REFERER);
-        headers.add("X-Title",      X_TITLE);
+        headers.add("HTTP-Referer", httpReferer);
+        headers.add("X-Title",      xTitle);
         return headers;
     }
 
     /** Builds the JSON request body with model, messages, and sampling parameters. */
     private Map<String, Object> buildRequestBody(String prompt) {
         var body = new HashMap<String, Object>();
-        body.put("model",     AI_MODEL);
-        body.put("messages",  List.of(Map.of("role", "user", "content", prompt)));
-        body.put("max_tokens", MAX_TOKENS);
-        body.put("temperature", TEMPERATURE);
+        body.put("model",       aiModel);
+        body.put("messages",    List.of(Map.of("role", "user", "content", prompt)));
+        body.put("max_tokens",  maxTokens);
+        body.put("temperature", temperature);
         return body;
     }
 

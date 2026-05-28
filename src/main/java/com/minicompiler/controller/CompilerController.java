@@ -6,6 +6,7 @@ import com.minicompiler.service.CompilerService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -24,9 +25,7 @@ public class CompilerController {
     // Constants
     // =========================================================================
 
-    private static final String SERVICE_NAME    = "minicompiler-backend";
-    private static final String SERVICE_VERSION = "1.0.0";
-    private static final String STATUS_UP       = "UP";
+    private static final String STATUS_UP = "UP";
 
     private static final Map<String, String> EXAMPLES = Map.of(
             "fibonacci", """
@@ -67,6 +66,16 @@ public class CompilerController {
     );
 
     // =========================================================================
+    // Fields
+    // =========================================================================
+
+    @Value("${spring.application.name}")
+    private String serviceName;
+
+    @Value("${app.version}")
+    private String serviceVersion;
+
+    // =========================================================================
     // Dependencies
     // =========================================================================
 
@@ -94,8 +103,8 @@ public class CompilerController {
     public ResponseEntity<Map<String, String>> health() {
         return ResponseEntity.ok(Map.of(
                 "status",  STATUS_UP,
-                "service", SERVICE_NAME,
-                "version", SERVICE_VERSION
+                "service", serviceName,
+                "version", serviceVersion
         ));
     }
 
