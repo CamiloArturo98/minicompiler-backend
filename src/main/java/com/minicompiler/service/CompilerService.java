@@ -13,6 +13,7 @@ import com.minicompiler.compiler.vm.VirtualMachine;
 import com.minicompiler.domain.entity.CompilationRecord;
 import com.minicompiler.dto.request.CompileRequest;
 import com.minicompiler.dto.response.CompileResponse;
+import com.minicompiler.exception.CompilerException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -52,20 +53,26 @@ public class CompilerService {
         long start = System.currentTimeMillis();
         log.debug("Starting compilation of {} chars", request.sourceCode().length());
 
-        var tokens   = lex(request.sourceCode());
-        var ast      = parse(tokens);
-        var codeGen  = generateCode(ast);
-        var bytecode = codeGen.generate(ast);
-        var final_bc = request.optimize() ? optimize(bytecode) : bytecode;
-        var result   = execute(codeGen, final_bc);
-        long elapsed = System.currentTimeMillis() - start;
+        try {
+            var tokens   = lex(request.sourceCode());
+            var ast      = parse(tokens);
+            var codeGen  = generateCode(ast);
+            var bytecode = codeGen.generate(ast);
+            var final_bc = request.optimize() ? optimize(bytecode) : bytecode;
+            var result   = execute(codeGen, final_bc);
+            long elapsed = System.currentTimeMillis() - start;
 
-        var response = buildResponse(request, tokens, ast, codeGen, bytecode,
-                request.optimize() ? final_bc : null, result, elapsed);
+            var response = buildResponse(request, tokens, ast, codeGen, bytecode,
+                    request.optimize() ? final_bc : null, result, elapsed);
 
-        persistLog(request, bytecode, result, elapsed);
+            persistLog(request, bytecode, result, elapsed);
 
-        return response;
+            return response;
+
+        } catch (CompilerException ex) {
+            persistFailedLog(request, ex.getMessage(), System.currentTimeMillis() - start);
+            throw ex;
+        }
     }
 
     // =========================================================================
@@ -193,4 +200,37 @@ public class CompilerService {
             log.warn("Failed to persist compilation log: {}", e.getMessage());
         }
     }
+
+    /**
+     * Persists a failed compilation log when a {@link CompilerException} is thrown
+     * during any phase (lexing, parsing, code generation).
+     * The exception is re-thrown after logging so the global handler still returns 422.
+     *
+     * @param request   the original compile request
+     * @param errorMsg  the exception message to store
+     * @param elapsedMs wall-clock time elapsed before the failure
+     */
+    private void persistFailedLog(CompileRequest request,
+                                  String         errorMsg,
+                                  long           elapsedMs) {
+        try {
+            var record = CompilationRecord.builder()
+                    .sourceCode(request.sourceCode())
+                    .output(null)
+                    .bytecode(null)
+                    .success(false)
+                    .errorMessage(errorMsg)
+                    .compilationTimeMs(elapsedMs)
+                    .instructionsExecuted(0)
+                    .optimized(request.optimize())
+                    .build();
+
+            recordService.saveRecord(record);
+            log.debug("Failed compilation log persisted — error={}", errorMsg);
+
+        } catch (Exception e) {
+            log.warn("Failed to persist failed compilation log: {}", e.getMessage());
+        }
+    }
+
 }
