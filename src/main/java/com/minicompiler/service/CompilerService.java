@@ -19,6 +19,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
+import java.util.Base64;
+import java.nio.charset.StandardCharsets;
 
 /**
  * Orchestrates the full compilation pipeline: lexing → parsing → code generation
@@ -54,7 +56,9 @@ public class CompilerService {
         log.debug("Starting compilation of {} chars", request.sourceCode().length());
 
         try {
-            var tokens   = lex(request.sourceCode());
+            String sourceCode = decodeSource(request.sourceCode());
+
+            var tokens   = lex(sourceCode);
             var ast      = parse(tokens);
             var codeGen  = generateCode(ast);
             var bytecode = codeGen.generate(ast);
@@ -62,10 +66,18 @@ public class CompilerService {
             var result   = execute(codeGen, final_bc);
             long elapsed = System.currentTimeMillis() - start;
 
-            var response = buildResponse(request, tokens, ast, codeGen, bytecode,
+            var decodedRequest = new CompileRequest(
+                    sourceCode,
+                    request.optimize(),
+                    request.showTokens(),
+                    request.showAst(),
+                    request.showBytecode()
+            );
+
+            var response = buildResponse(decodedRequest, tokens, ast, codeGen, bytecode,
                     request.optimize() ? final_bc : null, result, elapsed);
 
-            persistLog(request, bytecode, result, elapsed);
+            persistLog(decodedRequest, bytecode, result, elapsed);
 
             return response;
 
@@ -231,6 +243,18 @@ public class CompilerService {
         } catch (Exception e) {
             log.warn("Failed to persist failed compilation log: {}", e.getMessage());
         }
+    }
+    /**
+     * Decodes a Base64-encoded source string sent by the client.
+     * Uses {@link java.util.Base64} (standard since Java 8) with UTF-8 charset.
+     *
+     * @param  encoded the Base64-encoded source code
+     * @return the decoded source code as a plain UTF-8 string
+     * @throws IllegalArgumentException if the input is not valid Base64
+     */
+    private static String decodeSource(String encoded) {
+        byte[] decoded = Base64.getDecoder().decode(encoded);
+        return new String(decoded, StandardCharsets.UTF_8);
     }
 
 }
